@@ -6,26 +6,30 @@ import math
 from dataclasses import dataclass, field
 from contextlib import nullcontext
 import os
-import tiktoken 
-import argparse
+import tiktoken
+import argparse 
 import time
+# --- NECESSARY CLASS DEFINITIONS ---
+# (Must match the ORIGINAL 30M BPE model architecture)
 
 @dataclass
 class SLMConfig:
-    block_size: int = 128   
-    vocab_size: int = 50257
+    block_size: int = 128
+    vocab_size: int = 50257 # GPT-2 BPE size
     n_layer: int = 6
     n_head: int = 6
     n_embd: int = 384
     dropout: float = 0.1
     bias: bool = False
+    # Add other fields with defaults only if needed for model __init__
     device: str = 'cuda'
     dtype: str = 'bfloat16'
-    compile: bool = False
-    
+    compile: bool = False # Start with False for script loading
+
 class LayerNorm(nn.Module):
     def __init__(self, ndim, bias): super().__init__(); self.weight = nn.Parameter(torch.ones(ndim)); self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
     def forward(self, x): return F.layer_norm(x, self.weight.shape, self.weight, self.bias, 1e-5)
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__(); assert config.n_embd % config.n_head == 0
@@ -40,7 +44,7 @@ class CausalSelfAttention(nn.Module):
         is_training = self.training; dropout_val = self.dropout if is_training else 0.0
         if self.flash and not is_training:
              try: y = F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=0.0, is_causal=True)
-             except Exception: self.flash = False; 
+             except Exception: self.flash = False; # Fallthrough
         if not self.flash or is_training:
             att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
             current_T = min(T, self.bias.size(-1)); att = att.masked_fill(self.bias[:,:,:current_T,:current_T] == 0, float('-inf'))
@@ -72,7 +76,7 @@ class GPT(nn.Module):
         self.transformer = nn.ModuleDict(dict(wte = nn.Embedding(config.vocab_size, config.n_embd), wpe = nn.Embedding(config.block_size, config.n_embd), drop = nn.Dropout(config.dropout), h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]), ln_f = LayerNorm(config.n_embd, bias=config.bias)))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False); self.transformer.wte.weight = self.lm_head.weight
     def get_num_params(self, non_embedding=True): return sum(p.numel() for p in self.parameters())
-    def _init_weights(self, module):
+    def _init_weights(self, module): # Keep for reference
         if isinstance(module, nn.Linear): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02);
         if module.bias is not None: torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding): torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
@@ -87,9 +91,8 @@ class GPT(nn.Module):
         else: logits = self.lm_head(x[:, [-1], :]); loss = None
         return logits, loss
     @torch.no_grad()
-    
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
-        self.eval() 
+        self.eval() # IMPORTANT: Ensure eval mode
         enc = tiktoken.get_encoding("gpt2")
         for _ in range(max_new_tokens):
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
@@ -101,13 +104,18 @@ class GPT(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
 
+# --- END OF MODEL DEFINITIONS ---
+
 def load_model(checkpoint_path, device):
     """Loads the model from a checkpoint."""
     print(f"Loading checkpoint from: {checkpoint_path}")
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
+    # Load checkpoint to CPU first
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+
+    # Load config from checkpoint
     config_to_load = None
     if 'config' in checkpoint:
         saved_config_data = checkpoint['config']
@@ -124,8 +132,9 @@ def load_model(checkpoint_path, device):
              config_to_load = saved_config_data
     if config_to_load is None:
         print("Warning: Could not load config. Using default SLMConfig (might mismatch).")
-        config_to_load = SLMConfig()
+        config_to_load = SLMConfig() # Fallback
 
+    # Instantiate model
     model = GPT(config_to_load)
     print(f"Instantiated model with {model.get_num_params()/1e6:.2f}M parameters.")
 
@@ -138,23 +147,28 @@ def load_model(checkpoint_path, device):
     if unexpected_keys: print(f"Warning: Unexpected keys: {unexpected_keys}")
     print("Loaded model weights.")
 
+    # Move to device and set to eval mode
     model.to(device)
     model.eval()
     print(f"Moved model to {device} and set to eval mode.")
 
-    if config_to_load.compile:
+    # Optional: Compile after loading (can take time on first run)
+    if config_to_load.compile: # Check if original config wanted compilation
          print("Compiling model...")
          try: model = torch.compile(model); print("Model compiled.")
          except Exception as e: print(f"Compile failed: {e}")
 
     return model, config_to_load
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate text using a pre-trained BPE SLM model.")
     parser.add_argument("--prompt", type=str, default="Once upon a time", help="Input prompt for the model.")
+    parser.add_argument("--checkpoint_path", type=str, default="/home/namit/slm/best_model.pt", help="Path to the model checkpoint (.pt file).")
+    parser.add_argument("--max_new_tokens", type=int, default=150, help="Maximum number of new tokens to generate.")
+    parser.add_argument("--temperature", type=float, default=0.8, help="Sampling temperature (e.g., 0.8 for some randomness, 1.0 for more).")
+    parser.add_argument("--top_k", type=int, default=50, help="Top-k sampling threshold (e.g., 50). Use 0 to disable.")
+    parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="Device to run inference on ('cuda' or 'cpu').")
+    parser.add_argument("--dtype", type=str, default="bfloat16", choices=["float32", "float16", "bfloat16"], help="Datatype for inference ('float32', 'float16', 'bfloat16').")
     args = parser.parse_args()
-
     device = args.device
     if device == 'cuda' and not torch.cuda.is_available(): device = 'cpu'; print("CUDA not found, using CPU.")
     dtype = args.dtype
@@ -162,17 +176,14 @@ if __name__ == "__main__":
     if dtype == 'float16' and device == 'cpu': dtype = 'float32'; print("float16 not supported on CPU, using float32.")
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     ctx = nullcontext() if device == 'cpu' else torch.amp.autocast(device_type=device, dtype=ptdtype)
-    torch.set_default_dtype(ptdtype if device=='cuda' else torch.float32)
+    torch.set_default_dtype(ptdtype if device=='cuda' else torch.float32) # Set default for generation tensors
     model, loaded_config = load_model(args.checkpoint_path, device)
-
     enc = tiktoken.get_encoding("gpt2")
-
     start_ids = enc.encode(args.prompt, allowed_special={"<|endoftext|>"})
     x = torch.tensor(start_ids, dtype=torch.long, device=device).unsqueeze(0)
     print(f"\n--- Generating response ---")
     print(f"Prompt: \"{args.prompt}\"")
     print("-" * 30)
-
     start_gen_time = time.time()
     with torch.inference_mode():
         with ctx:
