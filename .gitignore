@@ -3,4 +3,5 @@
 .vscode/
 __pycache__/
 .venv/bin_files/
-models/
+.models/
+.bin_files/
