@@ -1,4 +1,4 @@
-# generate_bpe.py
+# generate_v3.py
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -9,22 +9,24 @@ import os
 import tiktoken
 import argparse 
 import time
+
 # --- NECESSARY CLASS DEFINITIONS ---
-# (Must match the ORIGINAL 30M BPE model architecture)
+# (Must match the NEW 124M BPE model architecture)
 
 @dataclass
 class SLMConfig:
-    block_size: int = 128
-    vocab_size: int = 50257 # GPT-2 BPE size
-    n_layer: int = 6
-    n_head: int = 6
-    n_embd: int = 384
-    dropout: float = 0.1
+    # --- V3 Model Architecture (GPT-2 Small, ~124M) ---
+    block_size: int = 256
+    vocab_size: int = 50257
+    n_layer: int = 12
+    n_head: int = 12
+    n_embd: int = 768
+    dropout: float = 0.1 # Dropout is 0 during eval, so this value doesn't matter
     bias: bool = False
-    # Add other fields with defaults only if needed for model __init__
+    # Add other fields with defaults only if needed
     device: str = 'cuda'
     dtype: str = 'bfloat16'
-    compile: bool = False # Start with False for script loading
+    compile: bool = True # Set to True to compile for inference
 
 class LayerNorm(nn.Module):
     def __init__(self, ndim, bias): super().__init__(); self.weight = nn.Parameter(torch.ones(ndim)); self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
@@ -92,7 +94,7 @@ class GPT(nn.Module):
         return logits, loss
     @torch.no_grad()
     def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
-        self.eval() # IMPORTANT: Ensure eval mode
+        self.eval()
         enc = tiktoken.get_encoding("gpt2")
         for _ in range(max_new_tokens):
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
@@ -106,16 +108,15 @@ class GPT(nn.Module):
 
 # --- END OF MODEL DEFINITIONS ---
 
-def load_model(checkpoint_path, device):
+def load_model(checkpoint_path, device, compile_model=True):
     """Loads the model from a checkpoint."""
     print(f"Loading checkpoint from: {checkpoint_path}")
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    # Load checkpoint to CPU first
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
 
-    # Load config from checkpoint
+    # --- Load Config ---
     config_to_load = None
     if 'config' in checkpoint:
         saved_config_data = checkpoint['config']
@@ -130,15 +131,17 @@ def load_model(checkpoint_path, device):
             except Exception as e: print(f"Warning: Error creating config from checkpoint dict: {e}")
         elif isinstance(saved_config_data, SLMConfig):
              config_to_load = saved_config_data
+    
+    # Fallback to default 124M config if load fails
     if config_to_load is None:
-        print("Warning: Could not load config. Using default SLMConfig (might mismatch).")
-        config_to_load = SLMConfig() # Fallback
+        print("Warning: Could not load config from checkpoint. Using default 124M SLMConfig.")
+        config_to_load = SLMConfig() 
 
-    # Instantiate model
+    # --- Instantiate Model ---
     model = GPT(config_to_load)
     print(f"Instantiated model with {model.get_num_params()/1e6:.2f}M parameters.")
 
-    # Load state dict
+    # --- Load State Dict ---
     if 'model' in checkpoint and isinstance(checkpoint['model'], dict): state_dict = checkpoint['model']
     else: state_dict = checkpoint; print("Loading state_dict directly.")
     uncompiled_state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
@@ -147,28 +150,32 @@ def load_model(checkpoint_path, device):
     if unexpected_keys: print(f"Warning: Unexpected keys: {unexpected_keys}")
     print("Loaded model weights.")
 
-    # Move to device and set to eval mode
     model.to(device)
     model.eval()
     print(f"Moved model to {device} and set to eval mode.")
 
-    # Optional: Compile after loading (can take time on first run)
-    if config_to_load.compile: # Check if original config wanted compilation
+    if compile_model:
          print("Compiling model...")
          try: model = torch.compile(model); print("Model compiled.")
          except Exception as e: print(f"Compile failed: {e}")
 
     return model, config_to_load
+
+# --- Main Execution ---
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Generate text using a pre-trained BPE SLM model.")
+    parser = argparse.ArgumentParser(description="Generate text using the 124M V3 SLM model.")
     parser.add_argument("--prompt", type=str, default="Once upon a time", help="Input prompt for the model.")
-    parser.add_argument("--checkpoint_path", type=str, default="/home/namit/slm/best_model.pt", help="Path to the model checkpoint (.pt file).")
+    # --- DEFAULT CHECKPOINT PATH UPDATED ---
+    parser.add_argument("--checkpoint_path", type=str, default="out_v3/best_model_v3.pt", help="Path to the V3 model checkpoint (.pt file).")
     parser.add_argument("--max_new_tokens", type=int, default=150, help="Maximum number of new tokens to generate.")
-    parser.add_argument("--temperature", type=float, default=0.8, help="Sampling temperature (e.g., 0.8 for some randomness, 1.0 for more).")
-    parser.add_argument("--top_k", type=int, default=50, help="Top-k sampling threshold (e.g., 50). Use 0 to disable.")
-    parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="Device to run inference on ('cuda' or 'cpu').")
-    parser.add_argument("--dtype", type=str, default="bfloat16", choices=["float32", "float16", "bfloat16"], help="Datatype for inference ('float32', 'float16', 'bfloat16').")
+    parser.add_argument("--temperature", type=float, default=0.8, help="Sampling temperature.")
+    parser.add_argument("--top_k", type=int, default=50, help="Top-k sampling. Use 0 to disable.")
+    parser.add_argument("--device", type=str, default="cuda", choices=["cuda", "cpu"], help="Device to run inference on.")
+    parser.add_argument("--dtype", type=str, default="bfloat16", choices=["float32", "float16", "bfloat16"], help="Datatype for inference.")
+    parser.add_argument("--no_compile", action="store_true", help="Disable torch.compile for this run.")
+    
     args = parser.parse_args()
+    
     device = args.device
     if device == 'cuda' and not torch.cuda.is_available(): device = 'cpu'; print("CUDA not found, using CPU.")
     dtype = args.dtype
@@ -176,26 +183,36 @@ if __name__ == "__main__":
     if dtype == 'float16' and device == 'cpu': dtype = 'float32'; print("float16 not supported on CPU, using float32.")
     ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     ctx = nullcontext() if device == 'cpu' else torch.amp.autocast(device_type=device, dtype=ptdtype)
-    torch.set_default_dtype(ptdtype if device=='cuda' else torch.float32) # Set default for generation tensors
-    model, loaded_config = load_model(args.checkpoint_path, device)
+    
+    # Set default dtype based on device for generation
+    torch.set_default_dtype(ptdtype if device=='cuda' else torch.float32) 
+    
+    # Load model
+    model, loaded_config = load_model(args.checkpoint_path, device, compile_model=(not args.no_compile))
+    
+    # Initialize tokenizer
     enc = tiktoken.get_encoding("gpt2")
+    
+    # Tokenize prompt
     start_ids = enc.encode(args.prompt, allowed_special={"<|endoftext|>"})
     x = torch.tensor(start_ids, dtype=torch.long, device=device).unsqueeze(0)
+    
     print(f"\n--- Generating response ---")
     print(f"Prompt: \"{args.prompt}\"")
     print("-" * 30)
     start_gen_time = time.time()
+    
     with torch.inference_mode():
         with ctx:
             y = model.generate(x,
                                args.max_new_tokens,
                                temperature=args.temperature,
-                               top_k=args.top_k if args.top_k > 0 else None) # Handle top_k=0 case
+                               top_k=args.top_k if args.top_k > 0 else None)
     end_gen_time = time.time()
 
-    # --- Decode and Print ---
-    generated_ids = y[0].tolist() # Full sequence
+    generated_ids = y[0].tolist()
     generated_text = enc.decode(generated_ids)
+    
     print("Generated Text:")
     print(generated_text)
     print("-" * 30)
