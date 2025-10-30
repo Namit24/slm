@@ -1,7 +1,12 @@
-.data/
-.out/
+# data and build outputs
+data/
+out/
+
+# IDE and env files
 .vscode/
 __pycache__/
-.venv/bin_files/
-.models/
-.bin_files/
+.venv/
+
+# model and binary folders
+bin_files/
+models/
