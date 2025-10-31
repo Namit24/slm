@@ -1,0 +1,162 @@
+ST Edge AI Core v2.2.0-20266 2adc00962
+Created date          : 2025-10-31 19:02:37
+Parameters            : generate --target stm32f4 --name network -m /home/namit/Desktop/nagpur docs/model_stm32_fixed_fp32.onnx --compression none --verbosity 1 -O ram --workspace /tmp/mxAI_workspace9689969845254265610678270516454 --output /home/namit/.stm32cubemx/network_output
+
+Exec/report summary (generate)
+-------------------------------------------------------------------------------------
+model file         :   /home/namit/Desktop/nagpur docs/model_stm32_fixed_fp32.onnx   
+type               :   onnx                                                          
+c_name             :   network                                                       
+compression        :   none                                                          
+options            :   allocate-inputs, allocate-outputs                             
+optimization       :   ram                                                           
+target/series      :   stm32f4                                                       
+workspace dir      :   /tmp/mxAI_workspace9689969845254265610678270516454            
+output dir         :   /home/namit/.stm32cubemx/network_output                       
+model_fmt          :   float                                                         
+model_name         :   model_stm32_fixed_fp32                                        
+model_hash         :   0x8e7957486051a10374b0627267177043                            
+params #           :   1,507 items (5.89 KiB)                                        
+-------------------------------------------------------------------------------------
+input 1/1          :   'input', f32(1x10), 40 Bytes, activations                     
+output 1/1         :   'logits', f32(1x3), 12 Bytes, activations                     
+macc               :   1,571                                                         
+weights (ro)       :   6,028 B (5.89 KiB) (1 segment)                                
+activations (rw)   :   256 B (256 B) (1 segment) *                                   
+ram (total)        :   256 B (256 B) = 256 + 0 + 0                                   
+-------------------------------------------------------------------------------------
+(*) 'input'/'output' buffers are allocated in the activations buffer
+
+Model name - model_stm32_fixed_fp32
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+m_id   layer (type,original)                           oshape        param/size       macc               connected to   | c_size          c_macc            c_type             
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+1      net_0_weight (Placeholder, Gemm)                [b:32,c:10]   320/1,280                                          | +128(+10.0%)    +352(+100.0%)     Dense_[0]          
+       net_0_bias (Placeholder, Gemm)                  [b:32]        32/128                                             | -128(-100.0%)                     
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+3      net_2_weight (Placeholder, Gemm)                [b:32,c:32]   1,024/4,096                                        | +128(+3.1%)     +1,056(+100.0%)   Dense_[2]          
+       net_2_bias (Placeholder, Gemm)                  [b:32]        32/128                                             | -128(-100.0%)                     
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+5      net_4_weight (Placeholder, Gemm)                [b:3,c:32]    96/384                                             | +12(+3.1%)      +99(+100.0%)      Dense_[o][4]       
+       net_4_bias (Placeholder, Gemm)                  [b:3]         3/12                                               | -12(-100.0%)                      
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+0      input (Input, )                                 [b:1,c:10]                                                       |                                   
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+1      _net_net_0_Gemm_output_0 (Gemm, Gemm)           [b:1,c:32]                      352                      input   |                 -352(-100.0%)     
+                                                                                                         net_0_weight   | 
+                                                                                                           net_0_bias   | 
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+2      _net_net_1_Relu_output_0 (Nonlinearity, Relu)   [b:1,c:32]                       32   _net_net_0_Gemm_output_0   |                                   Nonlinearity_[1]   
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+3      _net_net_2_Gemm_output_0 (Gemm, Gemm)           [b:1,c:32]                    1,056   _net_net_1_Relu_output_0   |                 -1,056(-100.0%)   
+                                                                                                         net_2_weight   | 
+                                                                                                           net_2_bias   | 
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+4      _net_net_3_Relu_output_0 (Nonlinearity, Relu)   [b:1,c:32]                       32   _net_net_2_Gemm_output_0   |                                   Nonlinearity_[3]   
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+5      logits (Gemm, Gemm)                             [b:1,c:3]                        99   _net_net_3_Relu_output_0   |                 -99(-100.0%)      
+                                                                                                         net_4_weight   | 
+                                                                                                           net_4_bias   | 
+------ ----------------------------------------------- ------------- ------------- ------- -------------------------- --- --------------- ----------------- ------------------ 
+model/c-model: macc=1,571/1,571  weights=6,028/6,028  activations=--/256 io=--/0
+
+
+
+Generated C-graph summary
+------------------------------------------------------------------------------------------------------------------------
+model name            : model_stm32_fixed_fp32
+c-name                : network
+c-node #              : 5
+c-array #             : 12
+activations size      : 256 (1 segment)
+weights size          : 6028 (1 segment)
+macc                  : 1571
+inputs                : ['input_output']
+outputs               : ['logits_output']
+
+C-Arrays (12)
+------ ---------------------------------- ----------- ------------------------- ------------- --------- 
+c_id   name (*_array)                     item/size   domain/mem-pool           c-type        comment   
+------ ---------------------------------- ----------- ------------------------- ------------- --------- 
+0      _net_net_0_Gemm_output_0_bias      32/128      weights/weights           const float             
+1      _net_net_0_Gemm_output_0_output    32/128      activations/**default**   float                   
+2      _net_net_0_Gemm_output_0_weights   320/1280    weights/weights           const float             
+3      _net_net_1_Relu_output_0_output    32/128      activations/**default**   float                   
+4      _net_net_2_Gemm_output_0_bias      32/128      weights/weights           const float             
+5      _net_net_2_Gemm_output_0_output    32/128      activations/**default**   float                   
+6      _net_net_2_Gemm_output_0_weights   1024/4096   weights/weights           const float             
+7      _net_net_3_Relu_output_0_output    32/128      activations/**default**   float                   
+8      input_output                       10/40       activations/**default**   float         /input    
+9      logits_bias                        3/12        weights/weights           const float             
+10     logits_output                      3/12        activations/**default**   float         /output   
+11     logits_weights                     96/384      weights/weights           const float             
+------ ---------------------------------- ----------- ------------------------- ------------- --------- 
+
+C-Layers (5)
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+c_id   name (*_layer)             id   layer_type      macc   rom    tensors                               shape (array id)   
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+0      _net_net_0_Gemm_output_0   1    Dense           352    1408   I: input_output                       f32(1x10) (8)      
+                                                                     W: _net_net_0_Gemm_output_0_weights   f32(32x10) (2)     
+                                                                     W: _net_net_0_Gemm_output_0_bias      f32(32) (0)        
+                                                                     O: _net_net_0_Gemm_output_0_output    f32(1x32) (1)      
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+1      _net_net_1_Relu_output_0   2    Nonlinearity    32     0      I: _net_net_0_Gemm_output_0_output    f32(1x32) (1)      
+                                                                     O: _net_net_1_Relu_output_0_output    f32(1x32) (3)      
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+2      _net_net_2_Gemm_output_0   3    Dense           1056   4224   I: _net_net_1_Relu_output_0_output    f32(1x32) (3)      
+                                                                     W: _net_net_2_Gemm_output_0_weights   f32(32x32) (6)     
+                                                                     W: _net_net_2_Gemm_output_0_bias      f32(32) (4)        
+                                                                     O: _net_net_2_Gemm_output_0_output    f32(1x32) (5)      
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+3      _net_net_3_Relu_output_0   4    Nonlinearity    32     0      I: _net_net_2_Gemm_output_0_output    f32(1x32) (5)      
+                                                                     O: _net_net_3_Relu_output_0_output    f32(1x32) (7)      
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+4      logits                     5    Dense           99     396    I: _net_net_3_Relu_output_0_output    f32(1x32) (7)      
+                                                                     W: logits_weights                     f32(3x32) (11)     
+                                                                     W: logits_bias                        f32(3) (9)         
+                                                                     O: logits_output                      f32(1x3) (10)      
+------ -------------------------- ---- --------------- ------ ------ ------------------------------------- ------------------ 
+
+
+
+Number of operations per c-layer
+------- ------ ----------------------------------------- ------- -------------- 
+c_id    m_id   name (type)                                   #op           type 
+------- ------ ----------------------------------------- ------- -------------- 
+0       1      _net_net_0_Gemm_output_0 (Dense)              352   smul_f32_f32 
+1       2      _net_net_1_Relu_output_0 (Nonlinearity)        32     op_f32_f32 
+2       3      _net_net_2_Gemm_output_0 (Dense)            1,056   smul_f32_f32 
+3       4      _net_net_3_Relu_output_0 (Nonlinearity)        32     op_f32_f32 
+4       5      logits (Dense)                                 99   smul_f32_f32 
+------- ------ ----------------------------------------- ------- -------------- 
+total                                                      1,571 
+
+Number of operation types
+---------------- ------- ----------- 
+operation type         #           % 
+---------------- ------- ----------- 
+smul_f32_f32       1,507       95.9% 
+op_f32_f32            64        4.1% 
+
+Complexity report (model)
+------ -------------------------- ------------------------- ------------------------- ------ 
+m_id   name                       c_macc                    c_rom                     c_id   
+------ -------------------------- ------------------------- ------------------------- ------ 
+1      net_0_weight               ||||||            22.4%   ||||||            23.4%   [0]    
+3      net_2_weight               ||||||||||||||||  67.2%   ||||||||||||||||  70.1%   [2]    
+5      net_4_weight               ||                 6.3%   ||                 6.6%   [4]    
+2      _net_net_1_Relu_output_0   |                  2.0%   |                  0.0%   [1]    
+4      _net_net_3_Relu_output_0   |                  2.0%   |                  0.0%   [3]    
+------ -------------------------- ------------------------- ------------------------- ------ 
+macc=1,571 weights=6,028 act=256 ram_io=0
+
+Generated files (7)
+--------------------------------------------------------------- 
+/home/namit/.stm32cubemx/network_output/network_data_params.h   
+/home/namit/.stm32cubemx/network_output/network_data_params.c   
+/home/namit/.stm32cubemx/network_output/network_data.h          
+/home/namit/.stm32cubemx/network_output/network_data.c          
+/home/namit/.stm32cubemx/network_output/network_config.h        
+/home/namit/.stm32cubemx/network_output/network.h               
+/home/namit/.stm32cubemx/network_output/network.c               
