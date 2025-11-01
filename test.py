@@ -217,3 +217,5 @@ if __name__ == "__main__":
     print(generated_text)
     print("-" * 30)
     print(f"Generated {len(generated_ids) - len(start_ids)} tokens in {end_gen_time - start_gen_time:.3f} seconds.")
+    
+    print("Project Complete")
